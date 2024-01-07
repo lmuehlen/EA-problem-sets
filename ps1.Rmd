@@ -1,0 +1,120 @@
+---
+title: "Homework 1"
+author: "lmuehlen"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Setup
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(usethis)
+# usethis::use_github()
+set.seed(42)
+```
+
+# Functions
+
+-   **generate_sample**
+
+    -   generates 1 sample
+```{r}
+generate_sample <- function(N, y0 = 0, alpha = 0.8) {
+  accumulate(rep(NA, N - 1), ~ alpha * .x + rnorm(1, 0, 1), .init = y0)
+}
+```
+
+-   **draw_samples**
+
+    -   draws [times] samples of sample sizes [N_values]
+    
+```{r}
+draw_samples <- function(N_values, times, y0 = 0, alpha = 0.8) {
+  map(N_values, ~ rerun(times, generate_sample(N = .x, y0, alpha)))
+}
+```
+
+-   **estimate alpha**
+
+    -   estimates the alpha
+
+    -   easier for next steps to use dbl instead of list (list would be just map)
+    
+```{r}
+estimate_alpha<- function(samples) {
+  map_dbl(samples, ~ ar(.x,order.max = 1, aic = FALSE, method = "ols")$ar)
+}
+```
+
+
+-   **compute_statistics**
+
+    -   returns bias, variance and mse
+    
+```{r}
+compute_statistics <- function(estimates, true_alpha = 0.8) {
+  bias <- mean(estimates) - true_alpha
+  variance <- var(estimates)
+  mse <- variance + bias^2
+
+  stats <- tibble(bias, variance, mse)
+
+  return(stats)
+}
+```
+
+-   **plot_statistics**
+
+    -   plots bias, variance, and mse against sample size
+
+```{r}
+plot_statistics <- function(stats) {
+  stats %>%
+    ggplot(aes(x = as.numeric(N), y = value)) +
+    geom_point() +
+    geom_line(linetype = "dotted") +
+    facet_wrap(~ factor(stat, levels = c("bias", "variance", "mse")), scales = "free_y", nrow = 3) +
+    theme_minimal(base_size = 15) +
+    theme(
+      panel.spacing = unit(1, "lines"),
+      strip.text = element_text(face = "bold")
+    ) +
+    labs(x = "Sample Size (N)", y = NULL)
+}
+```
+
+# 3.1 Generate observations DGP
+
+```{r}
+true_alpha <- 0.8
+sample_sizes <- c(10, 50, 100, 500, 1000)
+samples <- draw_samples(sample_sizes, alpha = true_alpha, times = 5000)
+alphas <- map(samples, estimate_alpha) %>% set_names(sample_sizes)
+```
+
+# 3.2 Compute and Plot Bias, Variance and MSE
+
+## i)
+
+```{r}
+stats <- map(alphas, ~ compute_statistics(.x)) %>%
+  bind_rows(.id = "N") %>%
+  pivot_longer(-N, names_to = "stat", values_to = "value")
+```
+
+## ii)
+
+```{r fig.height=7, fig.width=7}
+plot_statistics(stats)
+```
+
+# 3.3 Interpretation
+
+The MSE, variance, and bias converge in probability to 0 or in other words the estimator converges in probability to the true parameter value. Hence the OLS estimator is a consistent estimator for alpha.
